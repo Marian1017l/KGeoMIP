@@ -223,3 +223,6 @@ def iniciar():
         )
     )
     ejecutar_desde_excel(ruta_entrada, ruta_salida)
+
+if __name__ == "__main__":
+    iniciar()
