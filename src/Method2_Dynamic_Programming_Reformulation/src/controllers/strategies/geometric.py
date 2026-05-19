@@ -229,7 +229,4 @@ class GeometricSIA(SIA):
                 parte_b = [v for v in vertices if v not in parte_a_set]
                 mejor_fmt = fmt_biparte_q(parte_a, parte_b)
 
-            if mejor_phi == 0.0:
-                return mejor_phi, mejor_dist, mejor_fmt
-
         return mejor_phi, mejor_dist, mejor_fmt
