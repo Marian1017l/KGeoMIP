@@ -1,4 +1,5 @@
 import numpy as np
+import itertools
 import time
 from typing import List, Tuple
 
@@ -234,3 +235,75 @@ class KGeometricSIA(SIA):
                 mejor_fmt = fmt_biparte_q(parte_a, parte_b)
 
         return mejor_phi, mejor_dist, mejor_fmt
+    
+    # ------------------------------------------------------------------
+    # Fase 5 – k-MIP exacto por búsqueda exhaustiva (N_v ≤ 10, k ≤ 4)
+    # ------------------------------------------------------------------
+
+    def _evaluar_k_exacto(self, k: int) -> Tuple[float, np.ndarray, str]:
+        futuros   = self.sia_subsistema.indices_ncubos
+        presentes = self.sia_subsistema.dims_ncubos
+        vertices  = (
+            [(ACTUAL, int(d)) for d in presentes]
+            + [(EFECTO, int(i)) for i in futuros]
+        )
+        N_v = len(vertices)
+
+        if N_v > 10 or k > 4:
+            raise ValueError(
+                f"Modo exacto solo viable para N_v <= 10 y k <= 4. "
+                f"Recibido N_v={N_v}, k={k}. Usar _evaluar_k_particiones."
+            )
+
+        mejor_phi  = np.inf
+        mejor_dist = None
+        mejor_fmt  = None
+
+        for asignacion in itertools.product(range(1, k + 1), repeat=N_v):
+            # asignaciones que no usan todos los k grupos no son k-particiones válidas
+            if len(set(asignacion)) < k:
+                continue
+
+            grupos = {}
+            for idx, etiqueta in enumerate(asignacion):
+                grupos.setdefault(etiqueta, []).append(vertices[idx])
+
+            phi_total  = 0.0
+            fmt_grupos = []
+            dist_min_grupo = None
+            phi_min_grupo  = np.inf
+
+            for grupo in grupos.values():
+                futuros_g   = [v[1] for v in grupo if v[0] == EFECTO]
+                presentes_g = [v[1] for v in grupo if v[0] == ACTUAL]
+
+                cache_key = (tuple(sorted(futuros_g)), tuple(sorted(presentes_g)))
+                if cache_key not in self._cache_dists:
+                    arr_alc = np.array(futuros_g,   dtype=np.int8)
+                    arr_mec = np.array(presentes_g, dtype=np.int8)
+                    particion = self.sia_subsistema.bipartir(arr_alc, arr_mec)
+                    self._cache_dists[cache_key] = particion.distribucion_marginal()
+
+                dist_grupo = self._cache_dists[cache_key]
+                phi_grupo  = emd_efecto(dist_grupo, self.sia_dists_marginales)
+                phi_total += phi_grupo
+
+                parte_a = (
+                    [(ACTUAL, n) for n in presentes_g]
+                    + [(EFECTO, n) for n in futuros_g]
+                )
+                parte_a_set = set(parte_a)
+                parte_b     = [v for v in vertices if v not in parte_a_set]
+                fmt_grupos.append(fmt_biparte_q(parte_a, parte_b))
+
+                if phi_grupo < phi_min_grupo:
+                    phi_min_grupo  = phi_grupo
+                    dist_min_grupo = dist_grupo
+
+            if phi_total < mejor_phi:
+                mejor_phi  = phi_total
+                mejor_dist = dist_min_grupo
+                mejor_fmt  = " ‖ ".join(fmt_grupos)
+
+        return mejor_phi, mejor_dist, mejor_fmt
+    
