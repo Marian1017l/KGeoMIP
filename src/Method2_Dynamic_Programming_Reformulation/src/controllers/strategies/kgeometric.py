@@ -100,9 +100,10 @@ class KGeometricSIA(SIA):
         pos_global = {int(d): i for i, d in enumerate(dims)}
 
         tabla: List[np.ndarray] = []
+        costos_j = np.zeros(S, dtype=np.float64)
 
         for x in range(self.n):
-            costos_j = np.zeros(S, dtype=np.float64)
+            costos_j[:] = 0.0
             tensor   = self.tensors[x]
             j        = self._j_actual
 
@@ -137,7 +138,7 @@ class KGeometricSIA(SIA):
                 costo_vecinos = (mask * costos_j[vecinos_mat]).sum(axis=1)
                 costos_j[states_d] = gamma * (costo_directo[states_d] + costo_vecinos)
 
-            tabla.append(costos_j)
+            tabla.append(costos_j.copy())
 
         return tabla
 
