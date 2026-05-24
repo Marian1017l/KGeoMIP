@@ -14,7 +14,7 @@ from src.constants.base import (
 from src.constants.models import (
     GEOMETRIC_ANALYSIS_TAG,
     GEOMETRIC_LABEL,
-    KGEOMETRIC_STRATEGY_TAG,
+    GEOMETRIC_STRATEGY_TAG,
 )
 from src.controllers.manager import Manager
 from src.funcs.format import fmt_biparte_q
@@ -29,7 +29,7 @@ class KGeometricSIA(SIA):
             f"{NET_LABEL}{len(gestor.estado_inicial)}{gestor.pagina}"
         )
         self.etiquetas = [tuple(s.lower() for s in ABECEDARY), ABECEDARY]
-        self.logger = SafeLogger(GEOMETRIC_STRAREGY_TAG)
+        self.logger = SafeLogger(GEOMETRIC_STRATEGY_TAG)
         self.n: int = 0          # variables futuras  (|indices_ncubos|)
         self.m: int = 0          # variables presentes (|dims_ncubos|)
         self.tensors: List[np.ndarray] = []
@@ -131,12 +131,10 @@ class KGeometricSIA(SIA):
                 states_d = np.where(dist == d)[0]
                 if states_d.size == 0:
                     continue
-                # Acumular costos de vecinos a distancia d-1 ya calculados
-                costo_vecinos = np.zeros(states_d.size, dtype=np.float64)
-                for b in range(self.m):
-                    vecinos      = states_d ^ (1 << b)
-                    mask_validos = popcount[vecinos ^ j] == d - 1
-                    costo_vecinos += mask_validos * costos_j[vecinos]
+                # vecinos a distancia d-1 ya tienen costos_j calculado porque el loop externo en d es creciente
+                vecinos_mat   = states_d[:, None] ^ (1 << np.arange(self.m, dtype=np.int32))
+                mask          = popcount[vecinos_mat ^ j] == d - 1
+                costo_vecinos = (mask * costos_j[vecinos_mat]).sum(axis=1)
                 costos_j[states_d] = gamma * (costo_directo[states_d] + costo_vecinos)
 
             tabla.append(costos_j)
