@@ -35,6 +35,7 @@ class KGeometricSIA(SIA):
         self.tensors: List[np.ndarray] = []
         self._j_actual: int = 0
         self._popcount: np.ndarray = np.empty(0, dtype=np.int8)
+        self._cache_dists: dict[tuple, np.ndarray] = {}
 
     @profile(context={TYPE_TAG: GEOMETRIC_ANALYSIS_TAG})
     def aplicar_estrategia(
@@ -45,6 +46,7 @@ class KGeometricSIA(SIA):
         tpm: np.ndarray,
     ) -> Solution:
         self.sia_preparar_subsistema(condicion, alcance, mecanismo, tpm)
+        self._cache_dists = {}
 
         self._representacion_inicial()
         tabla      = self._construir_tabla_costos()
@@ -212,9 +214,12 @@ class KGeometricSIA(SIA):
             arr_alcance   = np.array(sub_alcance,   dtype=np.int8)
             arr_mecanismo = np.array(sub_mecanismo, dtype=np.int8)
 
-            particion      = self.sia_subsistema.bipartir(arr_alcance, arr_mecanismo)
-            dist_particion = particion.distribucion_marginal()
-            phi            = emd_efecto(dist_particion, self.sia_dists_marginales)
+            cache_key = (tuple(sorted(sub_alcance)), tuple(sorted(sub_mecanismo)))
+            if cache_key not in self._cache_dists:
+                particion = self.sia_subsistema.bipartir(arr_alcance, arr_mecanismo)
+                self._cache_dists[cache_key] = particion.distribucion_marginal()
+            dist_particion = self._cache_dists[cache_key]
+            phi = emd_efecto(dist_particion, self.sia_dists_marginales)
 
             if phi < mejor_phi:
                 mejor_phi  = phi
