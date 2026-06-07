@@ -109,13 +109,16 @@ class KGeometricSIA(SIA):
             (2.0 ** (-d) for d in range(self.m + 1)), dtype=np.float64, count=self.m + 1
         )
 
+        j = self._j_actual
+        dist_shared        = popcount[estados ^ j]
+        states_by_distance = [np.where(dist_shared == d)[0] for d in range(self.m + 1)]
+
         tabla: List[np.ndarray] = []
         costos_j = np.zeros(S, dtype=np.float64)
 
         for x in range(self.n):
             costos_j[:] = 0.0
             tensor   = self.tensors[x]
-            j        = self._j_actual
 
             ncubo      = self.sia_subsistema.ncubos[x]
             dims_local = ncubo.dims   # dimensiones de las que depende este n-cubo
@@ -134,17 +137,16 @@ class KGeometricSIA(SIA):
                 bit_col        = (estados >> pos_global[int(d)]) & 1
                 estados_local |= bit_col << pos_local
 
-            dist          = popcount[estados ^ j]
             costo_directo = np.abs(tensor[estados_local] - tensor[j_local])
 
             for d in range(1, self.m + 1):
                 gamma    = gammas[d]
-                states_d = np.where(dist == d)[0]
+                states_d = states_by_distance[d]
                 if states_d.size == 0:
                     continue
                 # vecinos a distancia d-1 ya tienen costos_j calculado porque el loop externo en d es creciente
                 vecinos_mat   = states_d[:, None] ^ (1 << np.arange(self.m, dtype=np.int32))
-                mask          = popcount[vecinos_mat ^ j] == d - 1
+                mask          = dist_shared[vecinos_mat] == d - 1
                 costo_vecinos = (mask * costos_j[vecinos_mat]).sum(axis=1)
                 costos_j[states_d] = gamma * (costo_directo[states_d] + costo_vecinos)
 
