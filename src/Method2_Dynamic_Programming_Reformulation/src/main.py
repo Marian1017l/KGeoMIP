@@ -66,6 +66,7 @@
 #     print(sia_uno)
 from src.controllers.manager import Manager
 from src.controllers.strategies.geometric import GeometricSIA
+from src.controllers.strategies.kgeometric import KGeometricSIA
 from src.controllers.strategies.q_nodes import QNodes
 # Optional import: this project often runs only geometric strategy.
 try:
@@ -209,6 +210,41 @@ def ejecutar_desde_excel(
     df_resultados.to_excel(ruta_salida, index=False)
     print(f"Resultados guardados en {ruta_salida}")
 
+def comparar_estrategias(n_nodos: int = 6, k: int = 2, seed: int = 42) -> None:
+    """Corre GeometricSIA y KGeometricSIA sobre el mismo sistema y compara phi."""
+    estado_inicial = "1" + "0" * (n_nodos - 1)
+    condiciones    = "1" * n_nodos
+    alcance        = "1" * n_nodos
+    mecanismo      = "1" * n_nodos
+
+    S = 1 << n_nodos
+    np.random.seed(seed)
+    tpm = np.random.rand(S, n_nodos)
+
+    sep = "=" * 60
+    print(f"\n{sep}")
+    print(f"COMPARACIÓN  GeometricSIA  vs  KGeometricSIA (k={k})")
+    print(f"Nodos: {n_nodos}  |  Estado: {estado_inicial}  |  seed={seed}")
+    print(sep)
+
+    res_geo = GeometricSIA(Manager(estado_inicial)).aplicar_estrategia(
+        condiciones, alcance, mecanismo, tpm
+    )
+    print(f"\n[GeometricSIA]       phi={res_geo.perdida:.8f}  t={res_geo.tiempo_ejecucion:.4f}s")
+
+    res_k = KGeometricSIA(Manager(estado_inicial)).aplicar_estrategia(
+        condiciones, alcance, mecanismo, tpm, k=k
+    )
+    print(f"[KGeometricSIA k={k}]  phi={res_k.perdida:.8f}  t={res_k.tiempo_ejecucion:.4f}s")
+
+    diff = abs(res_geo.perdida - res_k.perdida)
+    if diff < 1e-9:
+        print(f"\n  RESULTADO: phi IDENTICO  (diff={diff:.2e})  ✓")
+    else:
+        print(f"\n  RESULTADO: phi DIFERENTE (diff={diff:.8f})  ✗")
+    print(sep)
+
+
 def iniciar():
     ruta_entrada = Path(
         os.getenv(
@@ -225,4 +261,7 @@ def iniciar():
     ejecutar_desde_excel(ruta_entrada, ruta_salida)
 
 if __name__ == "__main__":
-    iniciar()
+    # Comparación rápida k=2 (debe dar phi idéntico)
+    #comparar_estrategias(n_nodos=6, k=2)
+    # k=3 con n=5: N_v = 5+5 = 10 → activa _evaluar_k_exacto
+    comparar_estrategias(n_nodos=10, k=3)

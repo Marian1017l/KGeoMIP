@@ -15,7 +15,7 @@ from src.constants.base import (
 from src.constants.models import (
     GEOMETRIC_ANALYSIS_TAG,
     GEOMETRIC_LABEL,
-    GEOMETRIC_STRATEGY_TAG,
+    GEOMETRIC_STRAREGY_TAG,
 )
 from src.controllers.manager import Manager
 from src.funcs.format import fmt_biparte_q
@@ -30,7 +30,7 @@ class KGeometricSIA(SIA):
             f"{NET_LABEL}{len(gestor.estado_inicial)}{gestor.pagina}"
         )
         self.etiquetas = [tuple(s.lower() for s in ABECEDARY), ABECEDARY]
-        self.logger = SafeLogger(GEOMETRIC_STRATEGY_TAG)
+        self.logger = SafeLogger(GEOMETRIC_STRAREGY_TAG)
         self.n: int = 0          # variables futuras  (|indices_ncubos|)
         self.m: int = 0          # variables presentes (|dims_ncubos|)
         self.tensors: List[np.ndarray] = []
@@ -76,7 +76,9 @@ class KGeometricSIA(SIA):
             for i in range(self.n)
         ]
         S = 1 << self.m
-        self._popcount = np.array([bin(x).count("1") for x in range(S)], dtype=np.int8)
+        self._popcount = np.fromiter(
+            (x.bit_count() for x in range(S)), dtype=np.int8, count=S
+        )
 
     # ------------------------------------------------------------------
     # Fase 2 – tabla de costos vectorizada  O(n · m · 2^m)
@@ -102,6 +104,10 @@ class KGeometricSIA(SIA):
 
         # Mapa dimensión-global → posición local dentro de dims
         pos_global = {int(d): i for i, d in enumerate(dims)}
+
+        gammas = np.fromiter(
+            (2.0 ** (-d) for d in range(self.m + 1)), dtype=np.float64, count=self.m + 1
+        )
 
         tabla: List[np.ndarray] = []
         costos_j = np.zeros(S, dtype=np.float64)
@@ -132,7 +138,7 @@ class KGeometricSIA(SIA):
             costo_directo = np.abs(tensor[estados_local] - tensor[j_local])
 
             for d in range(1, self.m + 1):
-                gamma    = 2.0 ** (-d)
+                gamma    = gammas[d]
                 states_d = np.where(dist == d)[0]
                 if states_d.size == 0:
                     continue
