@@ -210,6 +210,44 @@ def ejecutar_desde_excel(
     df_resultados.to_excel(ruta_salida, index=False)
     print(f"Resultados guardados en {ruta_salida}")
 
+
+def ejecutar_pruebas_kgeometric_tpm_real():
+    """Corre KGeometricSIA con las TPMs reales de data/samples (N4A..N10A),
+    cubriendo las tres rutas de _evaluar_k_particiones:
+      k=2              -> _evaluar_candidatos
+      k=3/4, N_v <= 10 -> _evaluar_k_exacto (RGS)
+      resto            -> _evaluar_k_heuristico
+    """
+    casos = [
+        # (estado_inicial, alcance, mecanismo, k)
+        ("1000",       "1111",       "1111",       2),  # N_v=8  -> exacto bipartición
+        ("1000",       "1111",       "1111",       3),  # N_v=8  -> exacto RGS
+        ("10000",      "11111",      "11111",      2),  # N_v=10 -> exacto bipartición
+        ("10000",      "11111",      "11111",      4),  # N_v=10 -> exacto RGS (peor caso)
+        ("100000",     "111111",     "111111",     2),  # N_v=12 -> exacto bipartición
+        ("100000",     "111111",     "111111",     3),  # N_v=12 -> heurístico greedy DP
+        ("10000000",   "11111111",   "11111111",   3),  # N_v=16 -> heurístico greedy DP
+        ("1000000000", "1111111111", "1111111111", 4),  # N_v=20 -> heurístico greedy DP
+    ]
+
+    sep = "=" * 60
+    for estado_inicial, alcance, mecanismo, k in casos:
+        condiciones = "1" * len(estado_inicial)
+        tpm_path = resolver_tpm_path(estado_inicial)
+        tpm = np.genfromtxt(tpm_path, delimiter=",")
+
+        resultado = KGeometricSIA(Manager(estado_inicial)).aplicar_estrategia(
+            condiciones, alcance, mecanismo, tpm, k=k
+        )
+
+        print(f"\n{sep}")
+        print(f"TPM={tpm_path.name}  nodos={len(estado_inicial)}  k={k}")
+        print(sep)
+        print(f"phi        : {resultado.perdida:.8f}")
+        print(f"tiempo     : {resultado.tiempo_ejecucion:.4f}s")
+        print(f"partición  : {resultado.particion}")
+
+
 def comparar_estrategias(n_nodos: int = 6, k: int = 2, seed: int = 42) -> None:
     """Corre GeometricSIA y KGeometricSIA sobre el mismo sistema y compara phi."""
     estado_inicial = "1" + "0" * (n_nodos - 1)
@@ -261,20 +299,6 @@ def iniciar():
     ejecutar_desde_excel(ruta_entrada, ruta_salida)
 
 if __name__ == "__main__":
-    # Progresión de pequeño a grande.
-    # k=2  → _evaluar_candidatos (bipartición exacta, todos los tamaños)
-    # k=3/4, N_v ≤ 10 → _evaluar_k_exacto (búsqueda exhaustiva)
-    # k=3,  N_v > 10  → heurístico greedy DP
-    casos = [
-        # (n_nodos, k, seed)
-        (3, 2, 42),
-        (4, 2, 42),
-        (4, 3, 42),
-        (5, 2, 42),
-        (5, 3, 42),
-        (5, 4, 42),
-        (6, 2, 42),
-        (6, 3, 42),
-    ]
-    for n, k, seed in casos:
-        comparar_estrategias(n_nodos=n, k=k, seed=seed)
+    # Pruebas con TPMs reales de data/samples (N4A..N10A): ejercitan las tres
+    # rutas de _evaluar_k_particiones sobre datos del proyecto, no aleatorios.
+    ejecutar_pruebas_kgeometric_tpm_real()
