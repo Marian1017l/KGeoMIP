@@ -298,7 +298,44 @@ def iniciar():
     )
     ejecutar_desde_excel(ruta_entrada, ruta_salida)
 
+def probar_mismo_sistema_15_nodos():
+    estado_inicial = "1" + "0" * 14   # 15 nodos
+    condiciones    = "1" * 15
+    alcance        = "1" * 15
+    mecanismo      = "1" * 15
+
+    tpm_path = resolver_tpm_path(estado_inicial)
+    tpm = np.genfromtxt(tpm_path, delimiter=",")
+
+    ks = [2, 3, 4, 5, 6]
+
+    sep = "=" * 70
+
+    print(f"\nSistema fijo de {len(estado_inicial)} nodos")
+    print(f"TPM: {tpm_path.name}")
+
+    for k in ks:
+        print(f"\n{sep}")
+        print(f"PRUEBA k={k}")
+        print(sep)
+
+        resultado = KGeometricSIA(
+            Manager(estado_inicial)
+        ).aplicar_estrategia(
+            condiciones,
+            alcance,
+            mecanismo,
+            tpm,
+            k=k,
+        )
+
+        print(f"phi       : {resultado.perdida:.8f}")
+        print(f"tiempo    : {resultado.tiempo_ejecucion:.4f}s")
+        print(f"particion : {resultado.particion}")
+
+
 if __name__ == "__main__":
     # Pruebas con TPMs reales de data/samples (N4A..N10A): ejercitan las tres
     # rutas de _evaluar_k_particiones sobre datos del proyecto, no aleatorios.
-    ejecutar_pruebas_kgeometric_tpm_real()
+    # ejecutar_pruebas_kgeometric_tpm_real()
+    probar_mismo_sistema_15_nodos()
