@@ -1,10 +1,9 @@
-import itertools
 import numpy as np
 import time
 from typing import List, Tuple
 
 from src.constants.base import NET_LABEL
-from src.funcs.base import ABECEDARY, emd_efecto
+from src.funcs.base import emd_efecto
 from src.middlewares.slogger import SafeLogger
 from src.models.base.sia import SIA
 from src.constants.base import (
@@ -29,7 +28,6 @@ class KGeometricSIA(SIA):
         profiler_manager.start_session(
             f"{NET_LABEL}{len(gestor.estado_inicial)}{gestor.pagina}"
         )
-        self.etiquetas = [tuple(s.lower() for s in ABECEDARY), ABECEDARY]
         self.logger = SafeLogger(GEOMETRIC_STRAREGY_TAG)
         self.n: int = 0          # variables futuras  (|indices_ncubos|)
         self.m: int = 0          # variables presentes (|dims_ncubos|)
@@ -272,10 +270,7 @@ class KGeometricSIA(SIA):
         mejor_dist = None
         mejor_asig = None
 
-        for asignacion in itertools.product(range(1, k + 1), repeat=N_v):
-            # sin todos los k grupos representados no es una k-partición válida
-            if len(set(asignacion)) < k:
-                continue
+        for asignacion in self._gen_particiones_rgs(N_v, k):
 
             phi_total    = 0.0
             dists_grupos = []
@@ -308,23 +303,33 @@ class KGeometricSIA(SIA):
 
         return mejor_phi, mejor_dist, " ‖ ".join(partes_fmt)
 
+    def _gen_particiones_rgs(self, N_v: int, k: int):
+        """Genera cada k-partición de {0,...,N_v-1} EXACTAMENTE UNA VEZ, como
+        tupla de etiquetas en {1,...,k} (Restricted Growth String desplazada +1
+        para conservar la convención de etiquetas 1..k ya usada en el resto
+        del método). Evita las k! reetiquetaciones equivalentes que recorre
+        itertools.product + filtro."""
+        a = [1] * N_v
+        def _rec(i: int, max_so_far: int):
+            if i == N_v:
+                if max_so_far == k:
+                    yield tuple(a)
+                return
+            for v in range(1, min(max_so_far + 1, k) + 1):
+                a[i] = v
+                yield from _rec(i + 1, max(max_so_far, v))
+        yield from _rec(1, 1)
+
     # ------------------------------------------------------------------
-    # Fase 6 – enrutador de k-particiones (k=2 exacto, k>2 greedy DP)
+    # Fase 6a – aproximación heurística greedy DP de k-particiones
     # ------------------------------------------------------------------
 
-    def _evaluar_k_particiones(
-        self, candidatos: list, k: int = 2
+    def _evaluar_k_heuristico(
+        self, candidatos: list, k: int
     ) -> Tuple[float, np.ndarray, str]:
         futuros   = self.sia_subsistema.indices_ncubos
         presentes = self.sia_subsistema.dims_ncubos
         N_v = len(presentes) + len(futuros)
-
-        if k == 2:
-            return self._evaluar_candidatos(candidatos)
-        if k <= 4 and N_v <= 10:
-            return self._evaluar_k_exacto(k)
-
-        self.logger.critic("Resultado heurístico: no garantiza MIP global para este tamaño.")
 
         vertices: List[Tuple[int, int]] = (
             [(ACTUAL, int(d)) for d in presentes]
@@ -400,4 +405,23 @@ class KGeometricSIA(SIA):
             partes_fmt.append(fmt_biparte_q(parte_a, parte_b))
 
         return phi_total, mejor_dist, " ‖ ".join(partes_fmt)
+
+    # ------------------------------------------------------------------
+    # Fase 6b – enrutador de k-particiones (k=2 exacto, k=3/4 pequeño exacto, resto greedy DP)
+    # ------------------------------------------------------------------
+
+    def _evaluar_k_particiones(
+        self, candidatos: list, k: int = 2
+    ) -> Tuple[float, np.ndarray, str]:
+        futuros   = self.sia_subsistema.indices_ncubos
+        presentes = self.sia_subsistema.dims_ncubos
+        N_v = len(presentes) + len(futuros)
+
+        if k == 2:
+            return self._evaluar_candidatos(candidatos)
+        if k <= 4 and N_v <= 10:
+            return self._evaluar_k_exacto(k)
+
+        self.logger.critic("Resultado heurístico: no garantiza MIP global para este tamaño.")
+        return self._evaluar_k_heuristico(candidatos, k)
     

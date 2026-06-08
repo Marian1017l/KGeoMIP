@@ -261,7 +261,20 @@ def iniciar():
     ejecutar_desde_excel(ruta_entrada, ruta_salida)
 
 if __name__ == "__main__":
-    # Comparación rápida k=2 (debe dar phi idéntico)
-    #comparar_estrategias(n_nodos=6, k=2)
-    # k=3 con n=5: N_v = 5+5 = 10 → activa _evaluar_k_exacto
-    comparar_estrategias(n_nodos=10, k=3)
+    # Progresión de pequeño a grande.
+    # k=2  → _evaluar_candidatos (bipartición exacta, todos los tamaños)
+    # k=3/4, N_v ≤ 10 → _evaluar_k_exacto (búsqueda exhaustiva)
+    # k=3,  N_v > 10  → heurístico greedy DP
+    casos = [
+        # (n_nodos, k, seed)
+        (3, 2, 42),
+        (4, 2, 42),
+        (4, 3, 42),
+        (5, 2, 42),
+        (5, 3, 42),
+        (5, 4, 42),
+        (6, 2, 42),
+        (6, 3, 42),
+    ]
+    for n, k, seed in casos:
+        comparar_estrategias(n_nodos=n, k=k, seed=seed)
