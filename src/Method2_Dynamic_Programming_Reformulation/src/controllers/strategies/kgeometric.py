@@ -113,6 +113,8 @@ class KGeometricSIA(SIA):
         dist_shared        = popcount[estados ^ j]
         states_by_distance = [np.where(dist_shared == d)[0] for d in range(self.m + 1)]
 
+        cache_proj: dict[tuple, np.ndarray] = {}
+
         tabla: List[np.ndarray] = []
         costos_j = np.zeros(S, dtype=np.float64)
 
@@ -132,10 +134,14 @@ class KGeometricSIA(SIA):
             # Proyección vectorizada de cada estado global al espacio local del n-cubo x.
             # Imprescindible cuando dims_local ⊂ dims: el tensor vive en 2^|dims_local|
             # pero costos_j opera en 2^m.
-            estados_local = np.zeros(S, dtype=np.int32)
-            for pos_local, d in enumerate(dims_local):
-                bit_col        = (estados >> pos_global[int(d)]) & 1
-                estados_local |= bit_col << pos_local
+            key_proj = tuple(int(d) for d in dims_local)
+            if key_proj not in cache_proj:
+                proj = np.zeros(S, dtype=np.int32)
+                for pos_local, d in enumerate(dims_local):
+                    bit_col  = (estados >> pos_global[int(d)]) & 1
+                    proj    |= bit_col << pos_local
+                cache_proj[key_proj] = proj
+            estados_local = cache_proj[key_proj]
 
             costo_directo = np.abs(tensor[estados_local] - tensor[j_local])
 
