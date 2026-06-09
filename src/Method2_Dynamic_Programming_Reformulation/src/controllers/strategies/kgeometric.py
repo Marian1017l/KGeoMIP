@@ -202,6 +202,24 @@ class KGeometricSIA(SIA):
             for b in range(self.m):
                 candidatos.add(((int(indices[x]),), (int(dims[b]),)))
 
+        # Corte total presente: nodo presente b desconectado de todo futuro
+        # Simétrico a ((indices[x],), ()) — cubre candidatos de la forma (∅, {pres_b})
+        for b in range(self.m):
+            candidatos.add(((), (int(dims[b]),)))
+
+        # Instrumentación temporal
+        candidatos_futuro_singleton = sum(
+            1 for a, m in candidatos if len(a) == 1 and len(m) == 0
+        )
+        candidatos_presente_singleton = sum(
+            1 for a, m in candidatos if len(a) == 0 and len(m) == 1
+        )
+        self.logger.critic(
+            f"[candidatos] futuro_singleton={candidatos_futuro_singleton}"
+            f"  presente_singleton={candidatos_presente_singleton}"
+            f"  total={len(candidatos)}"
+        )
+
         return list(candidatos)
 
     # ------------------------------------------------------------------
@@ -356,6 +374,24 @@ class KGeometricSIA(SIA):
                 singleton = ((vertices[idx][1],), ())
                 if singleton[0] not in alcances_existentes:
                     candidatos_nivel.append(singleton)
+
+            # Red de seguridad: singletons (∅, pres_b) por cada presente restante
+            # Simétrica a la red anterior — cubre candidatos de la forma (∅, {pres_b})
+            idx_presentes_rest = {i for i in restantes if vertices[i][0] == ACTUAL}
+            mecs_existentes = {c[1] for c in candidatos_nivel}
+            for idx in idx_presentes_rest:
+                singleton_pres = ((), (vertices[idx][1],))
+                if singleton_pres[1] not in mecs_existentes:
+                    candidatos_nivel.append(singleton_pres)
+
+            # Instrumentación temporal
+            _cnt_f = sum(1 for a, m in candidatos_nivel if len(a) == 1 and len(m) == 0)
+            _cnt_p = sum(1 for a, m in candidatos_nivel if len(a) == 0 and len(m) == 1)
+            self.logger.critic(
+                f"[heurístico nivel] futuro_singleton={_cnt_f}"
+                f"  presente_singleton={_cnt_p}"
+                f"  total_nivel={len(candidatos_nivel)}"
+            )
 
             mejor_phi_nivel  = np.inf
             mejor_dist_nivel = None
