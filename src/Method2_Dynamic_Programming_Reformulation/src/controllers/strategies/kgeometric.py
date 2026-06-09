@@ -287,51 +287,35 @@ class KGeometricSIA(SIA):
         futuros   = self.sia_subsistema.indices_ncubos
         presentes = self.sia_subsistema.dims_ncubos
         vertices: List[Tuple[int, int]] = (
-            [(ACTUAL, int(d)) for d in presentes]
-            + [(EFECTO, int(i)) for i in futuros]
+            [(ACTUAL, int(d)) for d in presentes] +
+            [(EFECTO, int(i)) for i in futuros]
         )
         N_v = len(vertices)
-        if N_v > 10 or k > 4:
-            raise ValueError(
-                "Modo exacto solo viable para N_v <= 10 y k <= 4. Usar _evaluar_k_particiones."
-            )
 
-        mejor_phi  = np.inf
+        mejor_phi = np.inf
         mejor_dist = None
-        mejor_asig = None
+        mejor_grupos = None
 
         for asignacion in self._gen_particiones_rgs(N_v, k):
-
-            phi_total    = 0.0
-            dists_grupos = []
-
+            grupos_actuales: List[Tuple[List[int], List[int]]] = []
+            
             for g in range(1, k + 1):
-                futuros_g   = [vertices[i][1] for i in range(N_v) if asignacion[i] == g and vertices[i][0] == EFECTO]
-                presentes_g = [vertices[i][1] for i in range(N_v) if asignacion[i] == g and vertices[i][0] == ACTUAL]
-                cache_key = (tuple(sorted(futuros_g)), tuple(sorted(presentes_g)))
-                if cache_key not in self._cache_dists:
-                    self._cache_dists[cache_key] = self.sia_subsistema.bipartir(
-                        np.array(futuros_g,   dtype=np.int8),
-                        np.array(presentes_g, dtype=np.int8),
-                    ).distribucion_marginal()
-                phi_grupo = emd_efecto(self._cache_dists[cache_key], self.sia_dists_marginales)
-                phi_total += phi_grupo
-                dists_grupos.append((phi_grupo, self._cache_dists[cache_key]))
+                futuros_g = [vertices[i][1] for i in range(N_v) 
+                            if asignacion[i] == g and vertices[i][0] == EFECTO]
+                presentes_g = [vertices[i][1] for i in range(N_v) 
+                              if asignacion[i] == g and vertices[i][0] == ACTUAL]
+                grupos_actuales.append((futuros_g, presentes_g))
+            
+            phi, dist, _ = self._evaluar_phi_k(grupos_actuales)
+            
+            if phi < mejor_phi:
+                mejor_phi = phi
+                mejor_dist = dist
+                mejor_grupos = grupos_actuales[:]
 
-            if phi_total < mejor_phi:
-                mejor_phi  = phi_total
-                mejor_asig = asignacion
-                mejor_dist = min(dists_grupos, key=lambda x: x[0])[1]
-
-        partes_fmt = []
-        for g in range(1, k + 1):
-            futuros_g   = [vertices[i][1] for i in range(N_v) if mejor_asig[i] == g and vertices[i][0] == EFECTO]
-            presentes_g = [vertices[i][1] for i in range(N_v) if mejor_asig[i] == g and vertices[i][0] == ACTUAL]
-            parte_a = [(ACTUAL, n) for n in presentes_g] + [(EFECTO, n) for n in futuros_g]
-            parte_b = [v for v in vertices if v not in set(parte_a)]
-            partes_fmt.append(fmt_biparte_q(parte_a, parte_b))
-
-        return mejor_phi, mejor_dist, " ‖ ".join(partes_fmt)
+        # Formato final
+        _, _, mejor_fmt = self._evaluar_phi_k(mejor_grupos)
+        return mejor_phi, mejor_dist, mejor_fmt
 
     def _gen_particiones_rgs(self, N_v: int, k: int):
         """Genera cada k-partición de {0,...,N_v-1} EXACTAMENTE UNA VEZ, como
