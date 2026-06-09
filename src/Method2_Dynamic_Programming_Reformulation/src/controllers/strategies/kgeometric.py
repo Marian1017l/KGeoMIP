@@ -342,33 +342,36 @@ class KGeometricSIA(SIA):
         N_v = len(presentes) + len(futuros)
 
         vertices: List[Tuple[int, int]] = (
-            [(ACTUAL, int(d)) for d in presentes]
-            + [(EFECTO, int(i)) for i in futuros]
+            [(ACTUAL, int(d)) for d in presentes] +
+            [(EFECTO, int(i)) for i in futuros]
         )
         v_idx = {v: i for i, v in enumerate(vertices)}
 
-        grupos_info = []
-        restantes   = set(range(N_v))
+        grupos_info: List[Tuple[List[int], List[int]]] = []   # ← Cambiado a lista de tuplas
+        restantes = set(range(N_v))
 
         for _ in range(k - 1):
+            if not restantes:
+                break
+
             idx_futuros_rest = {i for i in restantes if vertices[i][0] == EFECTO}
 
             candidatos_nivel = []
             for sub_alcance, sub_mecanismo in candidatos:
-                efecto_idxs = {v_idx[(EFECTO, n)] for n in sub_alcance if (EFECTO, n) in v_idx}
-                actual_idxs = {v_idx[(ACTUAL, n)] for n in sub_mecanismo if (ACTUAL, n) in v_idx}
+                efecto_idxs = {v_idx[(EFECTO, n)] for n in sub_alcance 
+                              if (EFECTO, n) in v_idx}
+                actual_idxs = {v_idx[(ACTUAL, n)] for n in sub_mecanismo 
+                              if (ACTUAL, n) in v_idx}
                 if efecto_idxs <= restantes and actual_idxs <= restantes:
                     candidatos_nivel.append((sub_alcance, sub_mecanismo))
 
-            # Red de seguridad: singletons (nodo_x, ∅) por cada futuro restante
+            # Redes de seguridad (singletons)
             alcances_existentes = {c[0] for c in candidatos_nivel}
             for idx in idx_futuros_rest:
                 singleton = ((vertices[idx][1],), ())
                 if singleton[0] not in alcances_existentes:
                     candidatos_nivel.append(singleton)
 
-            # Red de seguridad: singletons (∅, pres_b) por cada presente restante
-            # Simétrica a la red anterior — cubre candidatos de la forma (∅, {pres_b})
             idx_presentes_rest = {i for i in restantes if vertices[i][0] == ACTUAL}
             mecs_existentes = {c[1] for c in candidatos_nivel}
             for idx in idx_presentes_rest:
@@ -376,63 +379,44 @@ class KGeometricSIA(SIA):
                 if singleton_pres[1] not in mecs_existentes:
                     candidatos_nivel.append(singleton_pres)
 
-            # Instrumentación temporal
-            _cnt_f = sum(1 for a, m in candidatos_nivel if len(a) == 1 and len(m) == 0)
-            _cnt_p = sum(1 for a, m in candidatos_nivel if len(a) == 0 and len(m) == 1)
-            self.logger.critic(
-                f"[heurístico nivel] futuro_singleton={_cnt_f}"
-                f"  presente_singleton={_cnt_p}"
-                f"  total_nivel={len(candidatos_nivel)}"
-            )
-
-            mejor_phi_nivel  = np.inf
-            mejor_dist_nivel = None
+            # Seleccionar mejor candidato de este nivel
+            mejor_phi_nivel = np.inf
             mejor_cand_nivel = None
 
             for sub_alcance, sub_mecanismo in candidatos_nivel:
                 cache_key = (tuple(sorted(sub_alcance)), tuple(sorted(sub_mecanismo)))
                 if cache_key not in self._cache_dists:
                     self._cache_dists[cache_key] = self.sia_subsistema.bipartir(
-                        np.array(sub_alcance,   dtype=np.int8),
-                        np.array(sub_mecanismo, dtype=np.int8),
+                        np.array(sub_alcance, dtype=np.int8),
+                        np.array(sub_mecanismo, dtype=np.int8)
                     ).distribucion_marginal()
                 phi_c = emd_efecto(self._cache_dists[cache_key], self.sia_dists_marginales)
+                
                 if phi_c < mejor_phi_nivel:
-                    mejor_phi_nivel  = phi_c
-                    mejor_dist_nivel = self._cache_dists[cache_key]
+                    mejor_phi_nivel = phi_c
                     mejor_cand_nivel = (sub_alcance, sub_mecanismo)
 
+            if mejor_cand_nivel is None:
+                break
+
             alcance_g, mec_g = mejor_cand_nivel
+            grupos_info.append((list(alcance_g), list(mec_g)))
+
+            # Actualizar restantes
             grupo_idx = (
-                {v_idx[(EFECTO, n)] for n in alcance_g if (EFECTO, n) in v_idx}
-                | {v_idx[(ACTUAL, n)] for n in mec_g   if (ACTUAL, n) in v_idx}
+                {v_idx[(EFECTO, n)] for n in alcance_g if (EFECTO, n) in v_idx} |
+                {v_idx[(ACTUAL, n)] for n in mec_g if (ACTUAL, n) in v_idx}
             )
-            grupos_info.append((mejor_phi_nivel, mejor_dist_nivel, mejor_cand_nivel))
             restantes -= grupo_idx
 
-        # Grupo residual con todos los vértices que quedaron
-        alcance_res = tuple(vertices[i][1] for i in restantes if vertices[i][0] == EFECTO)
-        mec_res     = tuple(vertices[i][1] for i in restantes if vertices[i][0] == ACTUAL)
-        cache_key_res = (tuple(sorted(alcance_res)), tuple(sorted(mec_res)))
-        if cache_key_res not in self._cache_dists:
-            self._cache_dists[cache_key_res] = self.sia_subsistema.bipartir(
-                np.array(alcance_res, dtype=np.int8),
-                np.array(mec_res,     dtype=np.int8),
-            ).distribucion_marginal()
-        dist_res = self._cache_dists[cache_key_res]
-        phi_res  = emd_efecto(dist_res, self.sia_dists_marginales)
-        grupos_info.append((phi_res, dist_res, (alcance_res, mec_res)))
+        # === GRUPO RESIDUAL ===
+        alcance_res = [vertices[i][1] for i in restantes if vertices[i][0] == EFECTO]
+        mec_res     = [vertices[i][1] for i in restantes if vertices[i][0] == ACTUAL]
+        grupos_info.append((alcance_res, mec_res))
 
-        phi_total  = sum(g[0] for g in grupos_info)
-        mejor_dist = min(grupos_info, key=lambda g: g[0])[1]
+        phi_total, mejor_dist, mejor_fmt = self._evaluar_phi_k(grupos_info)
 
-        partes_fmt = []
-        for _, _, (alcance_g, mec_g) in grupos_info:
-            parte_a = [(ACTUAL, n) for n in mec_g] + [(EFECTO, n) for n in alcance_g]
-            parte_b = [v for v in vertices if v not in set(parte_a)]
-            partes_fmt.append(fmt_biparte_q(parte_a, parte_b))
-
-        return phi_total, mejor_dist, " ‖ ".join(partes_fmt)
+        return phi_total, mejor_dist, mejor_fmt
 
     def _evaluar_k_particiones(
         self, candidatos: list, k: int = 2
