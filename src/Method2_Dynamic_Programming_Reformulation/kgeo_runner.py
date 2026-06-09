@@ -17,6 +17,8 @@ import os
 import sys
 import time
 
+sys.setrecursionlimit(10000)
+
 import numpy as np
 
 # ── Argumentos ───────────────────────────────────────────────────────────────
