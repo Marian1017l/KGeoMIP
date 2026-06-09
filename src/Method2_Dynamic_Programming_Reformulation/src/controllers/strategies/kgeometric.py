@@ -48,6 +48,15 @@ class KGeometricSIA(SIA):
         self.sia_preparar_subsistema(condicion, alcance, mecanismo, tpm)
         self._cache_dists = {}
 
+        futuros = self.sia_subsistema.indices_ncubos
+        presentes = self.sia_subsistema.dims_ncubos
+        N_v = len(futuros) + len(presentes)
+        
+        if k < 2:
+            raise ValueError(f"k={k} no es válido. Debe ser k >= 2.")
+        if k > N_v:
+            raise ValueError(f"k={k} > N_v={N_v}. No es posible crear {k} grupos no vacíos.")
+        
         self._representacion_inicial()
         tabla      = self._construir_tabla_costos()
         candidatos = self._identificar_candidatos(tabla)
