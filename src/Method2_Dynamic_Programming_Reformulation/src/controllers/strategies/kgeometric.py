@@ -71,10 +71,6 @@ class KGeometricSIA(SIA):
             particion=particion,
         )
 
-    # ------------------------------------------------------------------
-    # Fase 1 – representación tensorial
-    # ------------------------------------------------------------------
-
     def _representacion_inicial(self) -> None:
         self.n = self.sia_subsistema.indices_ncubos.size
         self.m = self.sia_subsistema.dims_ncubos.size
@@ -86,16 +82,6 @@ class KGeometricSIA(SIA):
         self._popcount = np.fromiter(
             (x.bit_count() for x in range(S)), dtype=np.int8, count=S
         )
-
-    # ------------------------------------------------------------------
-    # Fase 2 – tabla de costos vectorizada  O(n · m · 2^m)
-    #
-    # Fórmula: t(i, j) = γ · (|X[i] − X[j]| + Σ t(k, j))
-    #          con γ = 2^(−d),  d = hamming(i, j)
-    # Se fija j = estado actual del mecanismo y se barre todo i ∈ {0…S−1}.
-    # El loop externo en d garantiza que los vecinos de distancia d−1
-    # ya están calculados cuando se necesitan.
-    # ------------------------------------------------------------------
 
     def _construir_tabla_costos(self) -> List[np.ndarray]:
         S        = 1 << self.m
@@ -167,10 +153,6 @@ class KGeometricSIA(SIA):
 
         return tabla
 
-    # ------------------------------------------------------------------
-    # Fase 3 – identificación de candidatos a bipartición
-    # ------------------------------------------------------------------
-
     def _identificar_candidatos(self, tabla: List[np.ndarray]) -> list:
         indices  = self.sia_subsistema.indices_ncubos
         dims     = self.sia_subsistema.dims_ncubos
@@ -231,10 +213,6 @@ class KGeometricSIA(SIA):
 
         return list(candidatos)
 
-    # ------------------------------------------------------------------
-    # Fase 4 – evaluación y selección del MIP
-    # ------------------------------------------------------------------
-
     def _evaluar_candidatos(
         self, candidatos: list
     ) -> Tuple[float, np.ndarray, str]:
@@ -276,10 +254,35 @@ class KGeometricSIA(SIA):
 
         return mejor_phi, mejor_dist, mejor_fmt
     
-    # ------------------------------------------------------------------
-    # Fase 5 – búsqueda exacta exhaustiva de k-particiones (N_v ≤ 10)
-    # ------------------------------------------------------------------
-
+    def _evaluar_phi_k(self, grupos: List[Tuple[List[int], List[int]]]) -> Tuple[float, np.ndarray, str]:
+        """
+        Calcula la pérdida REAL (φ) de una k-partición usando `participar_k`.
+        Retorna (phi, dist_total, formato_legible)
+        """
+        # Convertir a arrays para particionar_k
+        grupos_arr = [
+            (np.array(futuros_g, dtype=np.int8), np.array(presentes_g, dtype=np.int8))
+            for futuros_g, presentes_g in grupos
+        ]
+        
+        # Cálculo correcto: una sola distribución conjunta
+        dist_total = self.sia_subsistema.particionar_k(grupos_arr).distribucion_marginal()
+        phi = emd_efecto(dist_total, self.sia_dists_marginales)
+        
+        # Formato para mostrar la partición
+        vertices = (
+            [(ACTUAL, int(d)) for d in self.sia_subsistema.dims_ncubos] +
+            [(EFECTO, int(i)) for i in self.sia_subsistema.indices_ncubos]
+        )
+        
+        partes_fmt = []
+        for alcance_g, mec_g in grupos:
+            parte_a = [(ACTUAL, n) for n in mec_g] + [(EFECTO, n) for n in alcance_g]
+            parte_b = [v for v in vertices if v not in set(parte_a)]
+            partes_fmt.append(fmt_biparte_q(parte_a, parte_b))
+        
+        return phi, dist_total, " ‖ ".join(partes_fmt)
+    
     def _evaluar_k_exacto(self, k: int) -> Tuple[float, np.ndarray, str]:
         futuros   = self.sia_subsistema.indices_ncubos
         presentes = self.sia_subsistema.dims_ncubos
@@ -346,10 +349,6 @@ class KGeometricSIA(SIA):
                 a[i] = v
                 yield from _rec(i + 1, max(max_so_far, v))
         yield from _rec(1, 1)
-
-    # ------------------------------------------------------------------
-    # Fase 6a – aproximación heurística greedy DP de k-particiones
-    # ------------------------------------------------------------------
 
     def _evaluar_k_heuristico(
         self, candidatos: list, k: int
@@ -451,10 +450,6 @@ class KGeometricSIA(SIA):
 
         return phi_total, mejor_dist, " ‖ ".join(partes_fmt)
 
-    # ------------------------------------------------------------------
-    # Fase 6b – enrutador de k-particiones (k=2 exacto, k=3/4 pequeño exacto, resto greedy DP)
-    # ------------------------------------------------------------------
-
     def _evaluar_k_particiones(
         self, candidatos: list, k: int = 2
     ) -> Tuple[float, np.ndarray, str]:
@@ -469,4 +464,3 @@ class KGeometricSIA(SIA):
 
         self.logger.critic("Resultado heurístico: no garantiza MIP global para este tamaño.")
         return self._evaluar_k_heuristico(candidatos, k)
-    
