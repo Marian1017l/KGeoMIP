@@ -372,6 +372,9 @@ class KGeometricSIA(SIA):
                 candidate_masks.append((bit, (), (v[1],)))
 
         def evaluar_estado(grupos, restantes_mask):
+            if restantes_mask == 0:
+                return np.inf, None, None
+
             alcance_res = []
             mecanismo_res = []
             for i in range(N_v):
