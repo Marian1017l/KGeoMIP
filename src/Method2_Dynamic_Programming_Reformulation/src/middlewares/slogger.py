@@ -9,6 +9,13 @@ from colorama import init, Fore, Style
 
 from src.constants.base import LOGS_PATH
 
+# Inicializa colorama una sola vez por proceso. Llamarlo en cada
+# ColorFormatter envuelve sys.stdout repetidamente en capas anidadas de
+# AnsiToWin32, y con autoreset=True cada write() dispara reset_all() que
+# vuelve a recorrer todas las capas: el costo crece exponencialmente con
+# el número de loggers creados.
+init(autoreset=True)
+
 
 class ColorFormatter(logging.Formatter):
     """Formatter personalizado para consola con colores usando colorama."""
@@ -21,10 +28,6 @@ class ColorFormatter(logging.Formatter):
         logging.CRITICAL: Fore.MAGENTA,  # magenta
         logging.FATAL: Fore.RED + Style.BRIGHT,  # rojo brillante
     }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        init(autoreset=True)  # Inicializa colorama
 
     def format(self, record: logging.LogRecord) -> str:
         color = self.COLORS.get(record.levelno, "")
