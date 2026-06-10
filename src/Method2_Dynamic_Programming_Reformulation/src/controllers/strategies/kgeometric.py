@@ -337,105 +337,116 @@ class KGeometricSIA(SIA):
     def _evaluar_k_heuristico(
         self, candidatos: list, k: int
     ) -> Tuple[float, np.ndarray, str]:
-        """Heurística mejorada (todo inline) - Mejor para k=4 y k=5"""
-        futuros   = self.sia_subsistema.indices_ncubos
+        futuros = self.sia_subsistema.indices_ncubos
         presentes = self.sia_subsistema.dims_ncubos
-        N_v = len(presentes) + len(futuros)
-
-        vertices: List[Tuple[int, int]] = (
-            [(ACTUAL, int(d)) for d in presentes] +
-            [(EFECTO, int(i)) for i in futuros]
+        vertices = (
+            [(ACTUAL, int(d)) for d in presentes]
+            + [(EFECTO, int(i)) for i in futuros]
         )
-        v_idx = {v: i for i, v in enumerate(vertices)}
-
-        # Ordenar candidatos por pérdida (mejores primero) - inline
-        scored = []
-        for sub_alcance, sub_mecanismo in candidatos:
-            cache_key = (tuple(sorted(sub_alcance)), tuple(sorted(sub_mecanismo)))
-            if cache_key not in self._cache_dists:
-                dist_part = self.sia_subsistema.bipartir(
-                    np.array(sub_alcance, dtype=np.int8),
-                    np.array(sub_mecanismo, dtype=np.int8)
-                ).distribucion_marginal()
-                self._cache_dists[cache_key] = dist_part
-            phi = emd_efecto(self._cache_dists[cache_key], self.sia_dists_marginales)
-            scored.append((phi, (sub_alcance, sub_mecanismo)))
         
-        scored.sort()  # menor pérdida primero
-        candidatos_ordenados = [cand for _, cand in scored]
+        N_v = len(vertices)
+        v_idx = {v: i for i, v in enumerate(vertices)}
+        ALL_MASK = (1 << N_v) - 1
+        beam_width = min(100, max(30, 10 * k))
+        cache_phi = {}
+        candidate_masks = []
 
-        restantes = set(range(N_v))
-        grupos_info: List[Tuple[List[int], List[int]]] = []
+        for alcance, mecanismo in candidatos:
+            mask = 0
+            for n in alcance:
+                key = (EFECTO, int(n))
+                if key in v_idx:
+                    mask |= (1 << v_idx[key])
+            for n in mecanismo:
+                key = (ACTUAL, int(n))
+                if key in v_idx:
+                    mask |= (1 << v_idx[key])
+            if mask:
+                candidate_masks.append((mask, tuple(alcance), tuple(mecanismo)))
 
-        # Construir k-1 grupos
-        for step in range(k - 1):
-            if not restantes:
+        for i, v in enumerate(vertices):
+            bit = 1 << i
+            if v[0] == EFECTO:
+                candidate_masks.append((bit, (v[1],), ()))
+            else:
+                candidate_masks.append((bit, (), (v[1],)))
+
+        def evaluar_estado(grupos, restantes_mask):
+            alcance_res = []
+            mecanismo_res = []
+            for i in range(N_v):
+                if (restantes_mask >> i) & 1:
+                    if vertices[i][0] == EFECTO:
+                        alcance_res.append(vertices[i][1])
+                    else:
+                        mecanismo_res.append(vertices[i][1])
+
+            grupos_eval = grupos + [(alcance_res, mecanismo_res)]
+            key = tuple(
+                sorted(
+                    (tuple(sorted(a)), tuple(sorted(m)))
+                    for a, m in grupos_eval
+                )
+            )
+            if key in cache_phi:
+                return cache_phi[key]
+
+            phi, dist, fmt = self._evaluar_phi_k(grupos_eval)
+            cache_phi[key] = (phi, dist, fmt)
+            return phi, dist, fmt
+
+        beam = [([], ALL_MASK)]
+
+        for profundidad in range(k - 1):
+            candidatos_beam = []
+            vistos = set()
+
+            for grupos, restantes in beam:
+                for mask, alcance, mecanismo in candidate_masks:
+                    if mask == 0:
+                        continue
+                    if mask & ~restantes:
+                        continue
+
+                    nuevos_grupos = grupos + [(list(alcance), list(mecanismo))]
+                    nuevos_restantes = restantes & ~mask
+
+                    firma = (
+                        tuple(
+                            sorted(
+                                tuple(sorted(g[0])) +
+                                (-999,) +
+                                tuple(sorted(g[1]))
+                                for g in nuevos_grupos
+                            )
+                        ),
+                        nuevos_restantes
+                    )
+                    if firma in vistos:
+                        continue
+                    vistos.add(firma)
+
+                    phi_est, _, _ = evaluar_estado(nuevos_grupos, nuevos_restantes)
+                    candidatos_beam.append((phi_est, nuevos_grupos, nuevos_restantes))
+
+            if not candidatos_beam:
                 break
 
-            mejor_cand = None
-            mejor_phi_nivel = np.inf
+            candidatos_beam.sort(key=lambda x: x[0])
+            beam = [(g, r) for _, g, r in candidatos_beam[:beam_width]]
 
-            for sub_alcance, sub_mecanismo in candidatos_ordenados:
-                efecto_idxs = {v_idx[(EFECTO, n)] for n in sub_alcance 
-                            if (EFECTO, n) in v_idx}
-                actual_idxs = {v_idx[(ACTUAL, n)] for n in sub_mecanismo 
-                            if (ACTUAL, n) in v_idx}
-                grupo_idx = efecto_idxs | actual_idxs
+        mejor_phi = np.inf
+        mejor_dist = None
+        mejor_fmt = None
 
-                if not grupo_idx or not (grupo_idx & restantes):
-                    continue
+        for grupos, restantes in beam:
+            phi, dist, fmt = evaluar_estado(grupos, restantes)
+            if phi < mejor_phi:
+                mejor_phi = phi
+                mejor_dist = dist
+                mejor_fmt = fmt
 
-                temp_grupos = grupos_info + [(list(sub_alcance), list(sub_mecanismo))]
-                temp_grupos.append(([], []))  # placeholder residual
-
-                phi_c, _, _ = self._evaluar_phi_k(temp_grupos)
-                
-                if phi_c < mejor_phi_nivel:
-                    mejor_phi_nivel = phi_c
-                    mejor_cand = (list(sub_alcance), list(sub_mecanismo))
-
-            # Si no encontró buen candidato, tomar singleton
-            if mejor_cand is None:
-                for idx in list(restantes):
-                    v_type, v_id = vertices[idx]
-                    if v_type == EFECTO:
-                        mejor_cand = ([v_id], [])
-                    else:
-                        mejor_cand = ([], [v_id])
-                    break
-
-            if mejor_cand:
-                grupos_info.append(mejor_cand)
-                alcance_g, mec_g = mejor_cand
-                grupo_idx = (
-                    {v_idx[(EFECTO, n)] for n in alcance_g if (EFECTO, n) in v_idx} |
-                    {v_idx[(ACTUAL, n)] for n in mec_g if (ACTUAL, n) in v_idx}
-                )
-                restantes -= grupo_idx
-
-        # Grupo residual
-        alcance_res = [vertices[i][1] for i in restantes if vertices[i][0] == EFECTO]
-        mec_res     = [vertices[i][1] for i in restantes if vertices[i][0] == ACTUAL]
-        grupos_info.append((alcance_res, mec_res))
-
-        # === EVITAR GRUPOS VACÍOS (inline) ===
-        grupos_info = [g for g in grupos_info if g[0] or g[1]]  # eliminar vacíos
-        
-        while len(grupos_info) < k and grupos_info:
-            # Tomar del grupo más grande y mover un elemento
-            grupos_info.sort(key=lambda g: -(len(g[0]) + len(g[1])))
-            grande = grupos_info[0]
-            if grande[0]:
-                nodo = grande[0].pop()
-                grupos_info.append(([nodo], []))
-            elif grande[1]:
-                nodo = grande[1].pop()
-                grupos_info.append(([], [nodo]))
-
-        # Evaluación final
-        phi_total, mejor_dist, mejor_fmt = self._evaluar_phi_k(grupos_info)
-
-        return phi_total, mejor_dist, mejor_fmt
+        return mejor_phi, mejor_dist, mejor_fmt
 
     def _evaluar_k_particiones(
         self, candidatos: list, k: int = 2
