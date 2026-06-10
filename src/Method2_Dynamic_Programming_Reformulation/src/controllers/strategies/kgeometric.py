@@ -337,6 +337,7 @@ class KGeometricSIA(SIA):
     def _evaluar_k_heuristico(
         self, candidatos: list, k: int
     ) -> Tuple[float, np.ndarray, str]:
+        """Heurística mejorada (todo inline) - Mejor para k=4 y k=5"""
         futuros   = self.sia_subsistema.indices_ncubos
         presentes = self.sia_subsistema.dims_ncubos
         N_v = len(presentes) + len(futuros)
@@ -347,73 +348,91 @@ class KGeometricSIA(SIA):
         )
         v_idx = {v: i for i, v in enumerate(vertices)}
 
-        grupos_info: List[Tuple[List[int], List[int]]] = []   # ← Cambiado a lista de tuplas
-        restantes = set(range(N_v))
+        # Ordenar candidatos por pérdida (mejores primero) - inline
+        scored = []
+        for sub_alcance, sub_mecanismo in candidatos:
+            cache_key = (tuple(sorted(sub_alcance)), tuple(sorted(sub_mecanismo)))
+            if cache_key not in self._cache_dists:
+                dist_part = self.sia_subsistema.bipartir(
+                    np.array(sub_alcance, dtype=np.int8),
+                    np.array(sub_mecanismo, dtype=np.int8)
+                ).distribucion_marginal()
+                self._cache_dists[cache_key] = dist_part
+            phi = emd_efecto(self._cache_dists[cache_key], self.sia_dists_marginales)
+            scored.append((phi, (sub_alcance, sub_mecanismo)))
+        
+        scored.sort()  # menor pérdida primero
+        candidatos_ordenados = [cand for _, cand in scored]
 
-        for _ in range(k - 1):
+        restantes = set(range(N_v))
+        grupos_info: List[Tuple[List[int], List[int]]] = []
+
+        # Construir k-1 grupos
+        for step in range(k - 1):
             if not restantes:
                 break
 
-            idx_futuros_rest = {i for i in restantes if vertices[i][0] == EFECTO}
-
-            candidatos_nivel = []
-            for sub_alcance, sub_mecanismo in candidatos:
-                efecto_idxs = {v_idx[(EFECTO, n)] for n in sub_alcance 
-                              if (EFECTO, n) in v_idx}
-                actual_idxs = {v_idx[(ACTUAL, n)] for n in sub_mecanismo 
-                              if (ACTUAL, n) in v_idx}
-                if efecto_idxs <= restantes and actual_idxs <= restantes:
-                    candidatos_nivel.append((sub_alcance, sub_mecanismo))
-
-            # Redes de seguridad (singletons)
-            alcances_existentes = {c[0] for c in candidatos_nivel}
-            for idx in idx_futuros_rest:
-                singleton = ((vertices[idx][1],), ())
-                if singleton[0] not in alcances_existentes:
-                    candidatos_nivel.append(singleton)
-
-            idx_presentes_rest = {i for i in restantes if vertices[i][0] == ACTUAL}
-            mecs_existentes = {c[1] for c in candidatos_nivel}
-            for idx in idx_presentes_rest:
-                singleton_pres = ((), (vertices[idx][1],))
-                if singleton_pres[1] not in mecs_existentes:
-                    candidatos_nivel.append(singleton_pres)
-
-            # Seleccionar mejor candidato de este nivel
+            mejor_cand = None
             mejor_phi_nivel = np.inf
-            mejor_cand_nivel = None
 
-            for sub_alcance, sub_mecanismo in candidatos_nivel:
-                cache_key = (tuple(sorted(sub_alcance)), tuple(sorted(sub_mecanismo)))
-                if cache_key not in self._cache_dists:
-                    self._cache_dists[cache_key] = self.sia_subsistema.bipartir(
-                        np.array(sub_alcance, dtype=np.int8),
-                        np.array(sub_mecanismo, dtype=np.int8)
-                    ).distribucion_marginal()
-                phi_c = emd_efecto(self._cache_dists[cache_key], self.sia_dists_marginales)
+            for sub_alcance, sub_mecanismo in candidatos_ordenados:
+                efecto_idxs = {v_idx[(EFECTO, n)] for n in sub_alcance 
+                            if (EFECTO, n) in v_idx}
+                actual_idxs = {v_idx[(ACTUAL, n)] for n in sub_mecanismo 
+                            if (ACTUAL, n) in v_idx}
+                grupo_idx = efecto_idxs | actual_idxs
+
+                if not grupo_idx or not (grupo_idx & restantes):
+                    continue
+
+                temp_grupos = grupos_info + [(list(sub_alcance), list(sub_mecanismo))]
+                temp_grupos.append(([], []))  # placeholder residual
+
+                phi_c, _, _ = self._evaluar_phi_k(temp_grupos)
                 
                 if phi_c < mejor_phi_nivel:
                     mejor_phi_nivel = phi_c
-                    mejor_cand_nivel = (sub_alcance, sub_mecanismo)
+                    mejor_cand = (list(sub_alcance), list(sub_mecanismo))
 
-            if mejor_cand_nivel is None:
-                break
+            # Si no encontró buen candidato, tomar singleton
+            if mejor_cand is None:
+                for idx in list(restantes):
+                    v_type, v_id = vertices[idx]
+                    if v_type == EFECTO:
+                        mejor_cand = ([v_id], [])
+                    else:
+                        mejor_cand = ([], [v_id])
+                    break
 
-            alcance_g, mec_g = mejor_cand_nivel
-            grupos_info.append((list(alcance_g), list(mec_g)))
+            if mejor_cand:
+                grupos_info.append(mejor_cand)
+                alcance_g, mec_g = mejor_cand
+                grupo_idx = (
+                    {v_idx[(EFECTO, n)] for n in alcance_g if (EFECTO, n) in v_idx} |
+                    {v_idx[(ACTUAL, n)] for n in mec_g if (ACTUAL, n) in v_idx}
+                )
+                restantes -= grupo_idx
 
-            # Actualizar restantes
-            grupo_idx = (
-                {v_idx[(EFECTO, n)] for n in alcance_g if (EFECTO, n) in v_idx} |
-                {v_idx[(ACTUAL, n)] for n in mec_g if (ACTUAL, n) in v_idx}
-            )
-            restantes -= grupo_idx
-
-        # === GRUPO RESIDUAL ===
+        # Grupo residual
         alcance_res = [vertices[i][1] for i in restantes if vertices[i][0] == EFECTO]
         mec_res     = [vertices[i][1] for i in restantes if vertices[i][0] == ACTUAL]
         grupos_info.append((alcance_res, mec_res))
 
+        # === EVITAR GRUPOS VACÍOS (inline) ===
+        grupos_info = [g for g in grupos_info if g[0] or g[1]]  # eliminar vacíos
+        
+        while len(grupos_info) < k and grupos_info:
+            # Tomar del grupo más grande y mover un elemento
+            grupos_info.sort(key=lambda g: -(len(g[0]) + len(g[1])))
+            grande = grupos_info[0]
+            if grande[0]:
+                nodo = grande[0].pop()
+                grupos_info.append(([nodo], []))
+            elif grande[1]:
+                nodo = grande[1].pop()
+                grupos_info.append(([], [nodo]))
+
+        # Evaluación final
         phi_total, mejor_dist, mejor_fmt = self._evaluar_phi_k(grupos_info)
 
         return phi_total, mejor_dist, mejor_fmt
