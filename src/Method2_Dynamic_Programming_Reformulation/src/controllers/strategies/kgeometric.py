@@ -254,34 +254,39 @@ class KGeometricSIA(SIA):
 
         return mejor_phi, mejor_dist, mejor_fmt
     
-    def _evaluar_phi_k(self, grupos: List[Tuple[List[int], List[int]]]) -> Tuple[float, np.ndarray, str]:
+    def _evaluar_phi_k(self, grupos: List[Tuple[List[int], List[int]]]) -> Tuple[float, np.ndarray]:
         """
-        Calcula la pérdida REAL (φ) de una k-partición usando `participar_k`.
-        Retorna (phi, dist_total, formato_legible)
+        Calcula la pérdida REAL (φ) de una k-partición usando `particionar_k`.
+        Retorna (phi, dist_total)
         """
         # Convertir a arrays para particionar_k
         grupos_arr = [
             (np.array(futuros_g, dtype=np.int8), np.array(presentes_g, dtype=np.int8))
             for futuros_g, presentes_g in grupos
         ]
-        
+
         # Cálculo correcto: una sola distribución conjunta
         dist_total = self.sia_subsistema.particionar_k(grupos_arr).distribucion_marginal()
         phi = emd_efecto(dist_total, self.sia_dists_marginales)
-        
-        # Formato para mostrar la partición
+        return phi, dist_total
+
+    def _formatear_particion(self, grupos: List[Tuple[List[int], List[int]]]) -> str:
+        """
+        Formato legible de una k-partición. Se calcula una sola vez,
+        solo para la partición ganadora (no en cada evaluación de φ).
+        """
         vertices = (
             [(ACTUAL, int(d)) for d in self.sia_subsistema.dims_ncubos] +
             [(EFECTO, int(i)) for i in self.sia_subsistema.indices_ncubos]
         )
-        
+
         partes_fmt = []
         for alcance_g, mec_g in grupos:
             parte_a = [(ACTUAL, n) for n in mec_g] + [(EFECTO, n) for n in alcance_g]
             parte_b = [v for v in vertices if v not in set(parte_a)]
             partes_fmt.append(fmt_biparte_q(parte_a, parte_b))
-        
-        return phi, dist_total, " ‖ ".join(partes_fmt)
+
+        return " ‖ ".join(partes_fmt)
     
     def _evaluar_k_exacto(self, k: int) -> Tuple[float, np.ndarray, str]:
         futuros   = self.sia_subsistema.indices_ncubos
@@ -306,15 +311,15 @@ class KGeometricSIA(SIA):
                               if asignacion[i] == g and vertices[i][0] == ACTUAL]
                 grupos_actuales.append((futuros_g, presentes_g))
             
-            phi, dist, _ = self._evaluar_phi_k(grupos_actuales)
-            
+            phi, dist = self._evaluar_phi_k(grupos_actuales)
+
             if phi < mejor_phi:
                 mejor_phi = phi
                 mejor_dist = dist
                 mejor_grupos = grupos_actuales[:]
 
-        # Formato final
-        _, _, mejor_fmt = self._evaluar_phi_k(mejor_grupos)
+        # Formato final: una sola vez, solo para la partición ganadora
+        mejor_fmt = self._formatear_particion(mejor_grupos)
         return mejor_phi, mejor_dist, mejor_fmt
 
     def _gen_particiones_rgs(self, N_v: int, k: int):
@@ -371,10 +376,7 @@ class KGeometricSIA(SIA):
             else:
                 candidate_masks.append((bit, (), (v[1],)))
 
-        def evaluar_estado(grupos, restantes_mask):
-            if restantes_mask == 0:
-                return np.inf, None, None
-
+        def _residuo_grupo(restantes_mask):
             alcance_res = []
             mecanismo_res = []
             for i in range(N_v):
@@ -383,8 +385,13 @@ class KGeometricSIA(SIA):
                         alcance_res.append(vertices[i][1])
                     else:
                         mecanismo_res.append(vertices[i][1])
+            return alcance_res, mecanismo_res
 
-            grupos_eval = grupos + [(alcance_res, mecanismo_res)]
+        def evaluar_estado(grupos, restantes_mask):
+            if restantes_mask == 0:
+                return np.inf, None
+
+            grupos_eval = grupos + [_residuo_grupo(restantes_mask)]
             key = tuple(
                 sorted(
                     (tuple(sorted(a)), tuple(sorted(m)))
@@ -394,9 +401,9 @@ class KGeometricSIA(SIA):
             if key in cache_phi:
                 return cache_phi[key]
 
-            phi, dist, fmt = self._evaluar_phi_k(grupos_eval)
-            cache_phi[key] = (phi, dist, fmt)
-            return phi, dist, fmt
+            phi, dist = self._evaluar_phi_k(grupos_eval)
+            cache_phi[key] = (phi, dist)
+            return phi, dist
 
         beam = [([], ALL_MASK)]
 
@@ -429,7 +436,7 @@ class KGeometricSIA(SIA):
                         continue
                     vistos.add(firma)
 
-                    phi_est, _, _ = evaluar_estado(nuevos_grupos, nuevos_restantes)
+                    phi_est, _ = evaluar_estado(nuevos_grupos, nuevos_restantes)
                     candidatos_beam.append((phi_est, nuevos_grupos, nuevos_restantes))
 
             if not candidatos_beam:
@@ -440,14 +447,22 @@ class KGeometricSIA(SIA):
 
         mejor_phi = np.inf
         mejor_dist = None
-        mejor_fmt = None
+        mejor_grupos_eval = None
 
         for grupos, restantes in beam:
-            phi, dist, fmt = evaluar_estado(grupos, restantes)
+            phi, dist = evaluar_estado(grupos, restantes)
             if phi < mejor_phi:
                 mejor_phi = phi
                 mejor_dist = dist
-                mejor_fmt = fmt
+                mejor_grupos_eval = (
+                    grupos + [_residuo_grupo(restantes)] if restantes != 0 else grupos
+                )
+
+        # Formato final: una sola vez, solo para la partición ganadora
+        mejor_fmt = (
+            self._formatear_particion(mejor_grupos_eval)
+            if mejor_grupos_eval is not None else None
+        )
 
         return mejor_phi, mejor_dist, mejor_fmt
 
