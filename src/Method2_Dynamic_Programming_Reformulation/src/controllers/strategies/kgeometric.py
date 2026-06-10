@@ -427,7 +427,7 @@ class KGeometricSIA(SIA):
 
         if k == 2:
             return self._evaluar_candidatos(candidatos)
-        if k <= 4 and N_v <= 10:
+        if k <= 5 and N_v <= 10:
             return self._evaluar_k_exacto(k)
 
         self.logger.critic("Resultado heurístico: no garantiza MIP global para este tamaño.")
