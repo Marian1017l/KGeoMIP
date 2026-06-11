@@ -166,6 +166,15 @@ def procesar_hoja(wb_out, nombre: str, cfg: dict, ks: list, timeout: int):
 
     # Data rows start at Excel row 6 (1-indexed) = ws row 6
     DATA_ROW_OFFSET = 6  # fila Excel donde empieza prueba 1
+    MAX_PRUEBAS = 50
+
+    # Limpiar solo los datos que se van a (re)llenar en esta hoja para los k
+    # solicitados, sin tocar el resto de la hoja ni otras hojas del libro.
+    for r in range(DATA_ROW_OFFSET, DATA_ROW_OFFSET + MAX_PRUEBAS):
+        for k in ks:
+            base = K_COL_BASE[k]
+            for col_offset in range(1, 7):
+                ws.cell(row=r, column=base + col_offset).value = None
 
     print(f"  {'p':>3}  {'alcance':<15}  {'mecanismo':<15}", end="")
     for k in ks:
@@ -233,11 +242,15 @@ def main():
 
     ks = sorted(set(args.ks))
 
-    # Copiar Excel original al de salida
+    # Copiar la plantilla solo si el Excel de salida no existe todavía;
+    # si ya existe, se reutiliza para no perder resultados de otras hojas/corridas.
     import shutil
     salida = Path(args.salida)
-    shutil.copy2(str(EXCEL_IN), str(salida))
-    print(f"Excel copiado a: {salida}")
+    if not salida.exists():
+        shutil.copy2(str(EXCEL_IN), str(salida))
+        print(f"Excel copiado a: {salida}")
+    else:
+        print(f"Reutilizando Excel existente: {salida}")
 
     wb = openpyxl.load_workbook(str(salida))
 
