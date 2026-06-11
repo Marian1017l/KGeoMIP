@@ -176,14 +176,14 @@ def procesar_hoja(wb_out, nombre: str, cfg: dict, ks: list, timeout: int):
             for col_offset in range(1, 7):
                 ws.cell(row=r, column=base + col_offset).value = None
 
-    print(f"  {'p':>3}  {'alcance':<15}  {'mecanismo':<15}", end="")
-    for k in ks:
-        print(f"  geo_k{k}     kq_k{k} ", end="")
-    print()
-    print(f"  {'-'*3}  {'-'*15}  {'-'*15}", end="")
-    for k in ks:
-        print(f"  {'-'*9}  {'-'*9}", end="")
-    print()
+    # print(f"  {'p':>3}  {'alcance':<15}  {'mecanismo':<15}", end="")
+    # for k in ks:
+    #     print(f"  geo_k{k}     kq_k{k} ", end="")
+    # print()
+    # print(f"  {'-'*3}  {'-'*15}  {'-'*15}", end="")
+    # for k in ks:
+    #     print(f"  {'-'*9}  {'-'*9}", end="")
+    # print()
 
     for df_idx, row in data.iterrows():
         p = int(row["prueba"])
@@ -194,7 +194,7 @@ def procesar_hoja(wb_out, nombre: str, cfg: dict, ks: list, timeout: int):
 
         excel_row = DATA_ROW_OFFSET + (p - 1)  # row number in openpyxl (1-indexed)
 
-        print(f"  {p:>3}  {alc_s:<15}  {mec_s:<15}", end="", flush=True)
+        # print(f"  {p:>3}  {alc_s:<15}  {mec_s:<15}", end="", flush=True)
 
         for k in ks:
             base = K_COL_BASE[k]  # 0-indexed col of QNodes Partición
@@ -221,9 +221,9 @@ def procesar_hoja(wb_out, nombre: str, cfg: dict, ks: list, timeout: int):
             ws.cell(row=excel_row, column=base + 5).value = geo_phi  # Geo Pérdida
             ws.cell(row=excel_row, column=base + 6).value = geo_t    # Geo Tiempo
 
-            print(f"  {geo_phi:>9}  {kq_phi:>9}", end="", flush=True)
+            # print(f"  {geo_phi:>9}  {kq_phi:>9}", end="", flush=True)
 
-        print()
+        # print()
 
     print(f"\n  Hoja '{sheet_name}' completada.")
 
