@@ -245,6 +245,44 @@ class System:
         )
         return new_sys
 
+    def particionar_k(
+        self,
+        grupos: list[tuple[NDArray[np.int8], NDArray[np.int8]]],
+    ) -> "System":
+        """
+        Generaliza `bipartir` a una partición en k grupos.
+
+        A diferencia de aplicar `bipartir` una vez por grupo (cuyas
+        EMDs individuales no son sumables porque cada llamada reevalúa
+        TODOS los n-cubos del sistema bajo un mecanismo distinto), aquí
+        se construye un único sistema donde cada n-cubo se marginaliza
+        según el mecanismo de su propio grupo, de modo que
+        `distribucion_marginal()` produzca un único vector comparable
+        con `self.distribucion_marginal()` mediante una sola EMD.
+
+        Args:
+            grupos (list[tuple[NDArray[np.int8], NDArray[np.int8]]]): lista
+                de pares `(alcance_g, mecanismo_g)`, uno por grupo, cuyos
+                `alcance_g` deben cubrir cada n-cubo de `self.ncubos`
+                exactamente una vez.
+
+        Returns:
+            System: sistema con cada n-cubo marginalizado según el
+            mecanismo de su propio grupo.
+        """
+        mecanismo_por_indice: dict[int, NDArray[np.int8]] = {}
+        for alcance_g, mecanismo_g in grupos:
+            for indice in alcance_g:
+                mecanismo_por_indice[int(indice)] = mecanismo_g
+
+        new_sys = System.__new__(System)
+        new_sys.estado_inicial = self.estado_inicial
+        new_sys.ncubos = tuple(
+            cube.marginalizar(np.setdiff1d(cube.dims, mecanismo_por_indice[cube.indice]))
+            for cube in self.ncubos
+        )
+        return new_sys
+
     def distribucion_marginal(self):
         """
         Partiendo de idealmente un subsistema o una bipartición como entrada, se seleccionana los nodos/elementos cuando su estado es OFF o inactivo para cada uno de ellos, mediante la propiedad de las distribuciones marginales, esto nos permite calcular más eficientemente la EMD-Effect, logrando así determinar un coste para dar comparación entre idealmente, un sub-sistema y una bipartición. Hemos de aplicar una reversión en la selección del estado inicial puesto
