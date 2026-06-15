@@ -11,15 +11,18 @@ from src.controllers.strategies.kgeometric import KGeometricSIA
 
 # Red de muestra (TPM). Cambie el archivo por otra red de src/.samples/
 # La longitud del estado y las máscaras debe coincidir con el tamaño de la red.
-RED_CSV = "src/.samples/N20A.csv"
+RAIZ_PROYECTO = Path(__file__).resolve().parent.parent.parent
+
+# Ruta de la red, anclada a la raíz (sin importar desde dónde ejecutes)
+RED_CSV = RAIZ_PROYECTO / "data" / "samples" / "N10A.csv"
 
 # Estado inicial del sistema (cadena binaria, 1=ON, 0=OFF).
-ESTADO_INICIAL = "10000000000000000000"
+ESTADO_INICIAL = "1000000000"
 
 # Máscaras del subsistema a analizar (misma longitud que el estado inicial).
-CONDICION = "11111111111111111111"   # variables condicionadas (fondo)
-ALCANCE   = "11110000000000000000"   # purview / futuro
-MECANISMO = "00001111000000000000"   # mecanismo / presente
+CONDICION = "1111111111"   # variables condicionadas (fondo)
+ALCANCE   = "1111000000"   # purview / futuro
+MECANISMO = "0000111100"   # mecanismo / presente
 
 # Valores de k a probar. Recuerde: 2 <= k <= N_v (alcance + mecanismo).
 VALORES_K = [2, 3, 4, 5]
@@ -48,7 +51,7 @@ def imprimir_resultado(k: int, solucion) -> None:
     print(f"  k          : {k}")
     print(f"  Pérdida φ  : {solucion.perdida}")
     print(f"  Partición  :\n{solucion.particion}")
-    print(f"  Tiempo (s) : {solucion.tiempo_total:.4f}")
+    print(f"  Tiempo (s) : {solucion.tiempo_ejecucion:.4f}")
 
 
 # ───────────────────────────────────────────────────────────────────────

@@ -1,2 +1,4 @@
-2026-06-10 01:18:12 [Geometric_strategy] CRITICAL MainProcess: [candidatos] futuro_singleton=15  presente_singleton=15  total=255
-2026-06-10 01:18:12 [Geometric_strategy] CRITICAL MainProcess: Resultado heurístico: no garantiza MIP global para este tamaño.
+2026-06-14 23:51:27 [Geometric_strategy] CRITICAL MainProcess: [candidatos] futuro_singleton=4  presente_singleton=4  total=27
+2026-06-14 23:51:27 [Geometric_strategy] CRITICAL MainProcess: [candidatos] futuro_singleton=4  presente_singleton=4  total=27
+2026-06-14 23:51:28 [Geometric_strategy] CRITICAL MainProcess: [candidatos] futuro_singleton=4  presente_singleton=4  total=27
+2026-06-14 23:51:28 [Geometric_strategy] CRITICAL MainProcess: [candidatos] futuro_singleton=4  presente_singleton=4  total=27
